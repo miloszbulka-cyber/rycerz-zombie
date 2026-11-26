@@ -3,168 +3,429 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rycerz kontra Zombie</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rycerz kontra Zombie 3D</title>
+
 <style>
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+}
+
 body {
     margin: 0;
+    overflow: hidden;
     background: #101510;
     color: white;
     font-family: Arial, sans-serif;
-    text-align: center;
 }
-h1 { color: #e9c46a; }
-#panel {
+
+#game {
+    position: fixed;
+    inset: 0;
+}
+
+#menu {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(
+        rgba(5, 10, 8, 0.55),
+        rgba(5, 10, 8, 0.95)
+    );
     display: flex;
+    align-items: center;
     justify-content: center;
-    gap: 25px;
-    flex-wrap: wrap;
-    margin: 15px;
-    font-size: 18px;
+    text-align: center;
+    z-index: 10;
 }
-canvas {
-    width: 900px;
-    max-width: 96%;
-    height: auto;
-    border: 3px solid #69764c;
-    background: #263b29;
+
+#menuContent {
+    padding: 30px;
 }
+
+h1 {
+    color: #e9c46a;
+    font-size: clamp(30px, 6vw, 65px);
+    text-shadow: 0 0 20px #000;
+}
+
 button {
-    padding: 12px 25px;
-    margin: 12px;
-    background: #d7ad57;
-    border: 0;
-    border-radius: 6px;
+    background: #c79b43;
+    border: none;
+    padding: 15px 35px;
+    font-size: 20px;
     font-weight: bold;
     cursor: pointer;
+    border-radius: 6px;
 }
-#message { color: #e9c46a; min-height: 24px; }
+
+button:hover {
+    background: #f4d58d;
+}
+
+#hud {
+    display: none;
+    position: fixed;
+    top: 15px;
+    left: 15px;
+    z-index: 5;
+    background: rgba(0,0,0,0.65);
+    padding: 15px;
+    border-radius: 8px;
+    line-height: 1.8;
+}
+
+#crosshair {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #e9c46a;
+    font-size: 30px;
+    pointer-events: none;
+}
+
+#help {
+    position: fixed;
+    bottom: 15px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: #ddd;
+    pointer-events: none;
+}
+
+#message {
+    color: #e9c46a;
+    margin: 15px;
+}
 </style>
 </head>
+
 <body>
 
-<h1>RYCERZ KONTRA ZOMBIE</h1>
+<div id="game"></div>
 
-<div id="panel">
-    <span>Punkty: <b id="score">0</b></span>
-    <span>Zdrowie: <b id="health">100</b></span>
-    <span>Fala: <b id="wave">1</b></span>
-    <span>Broń: <b id="weapon">Miecz</b></span>
+<div id="menu">
+    <div id="menuContent">
+        <h1>RYCERZ KONTRA ZOMBIE</h1>
+        <p>Przetrwaj w królestwie umarłych.</p>
+        <p id="message">Gotowy do walki?</p>
+        <button id="start">NOWA GRA</button>
+    </div>
 </div>
 
-<canvas id="game" width="900" height="550"></canvas>
+<div id="hud">
+    <div>Punkty: <span id="score">0</span></div>
+    <div>Zdrowie: <span id="health">100</span></div>
+    <div>Fala: <span id="wave">1</span></div>
+    <div>Zombie: <span id="enemies">0</span></div>
+</div>
 
-<div id="message">Wybierz broń na mapie i przetrwaj!</div>
+<div id="crosshair">+</div>
 
-<button onclick="restartGame()">NOWA GRA</button>
+<div id="help">
+    WASD — ruch | SPACJA / kliknięcie — atak | ESC — pauza
+</div>
 
-<p>
-WASD / strzałki — ruch |
-SPACJA — atak |
-E — podnieś broń |
-1-4 — zmień broń
-</p>
+<script src="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.min.js"></script>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const game = document.getElementById("game");
+const menu = document.getElementById("menu");
+const hud = document.getElementById("hud");
+const startButton = document.getElementById("start");
 
-const W = canvas.width;
-const H = canvas.height;
+const scoreText = document.getElementById("score");
+const healthText = document.getElementById("health");
+const waveText = document.getElementById("wave");
+const enemiesText = document.getElementById("enemies");
+const message = document.getElementById("message");
 
-const ui = {
-    score: document.getElementById("score"),
-    health: document.getElementById("health"),
-    wave: document.getElementById("wave"),
-    weapon: document.getElementById("weapon"),
-    message: document.getElementById("message")
-};
+const scene = new THREE.Scene();
 
-const weapons = [
-    {
-        name: "Miecz",
-        damage: 1,
-        range: 75,
-        cooldown: 0.35,
-        color: "#e5e5e5",
-        type: "melee"
-    },
-    {
-        name: "Topór",
-        damage: 2,
-        range: 85,
-        cooldown: 0.75,
-        color: "#c58a49",
-        type: "melee"
-    },
-    {
-        name: "Włócznia",
-        damage: 1,
-        range: 135,
-        cooldown: 0.55,
-        color: "#d8d8d8",
-        type: "melee"
-    },
-    {
-        name: "Kusza",
-        damage: 1,
-        range: 450,
-        cooldown: 0.65,
-        color: "#9b7748",
-        type: "ranged"
+scene.background = new THREE.Color(0x17251d);
+scene.fog = new THREE.Fog(0x17251d, 20, 80);
+
+const camera = new THREE.PerspectiveCamera(
+    70,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    150
+);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias: true
+});
+
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+game.appendChild(renderer.domElement);
+
+// Światło
+scene.add(new THREE.HemisphereLight(0xb9d4df, 0x25351f, 2));
+
+const sunlight = new THREE.DirectionalLight(0xffe0a1, 3);
+sunlight.position.set(-15, 30, 15);
+sunlight.castShadow = true;
+scene.add(sunlight);
+
+// Podłoże
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({
+        color: 0x344832,
+        roughness: 1
+    })
+);
+
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Elementy mapy
+for (let i = 0; i < 80; i++) {
+    const stone = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(
+            0.3 + Math.random() * 0.8
+        ),
+        new THREE.MeshStandardMaterial({
+            color: 0x50574c
+        })
+    );
+
+    stone.position.set(
+        (Math.random() - 0.5) * 100,
+        0.3,
+        (Math.random() - 0.5) * 100
+    );
+
+    stone.castShadow = true;
+    scene.add(stone);
+}
+
+// Zamek
+function createCastle() {
+    const material = new THREE.MeshStandardMaterial({
+        color: 0x5a5c55
+    });
+
+    const castle = new THREE.Group();
+
+    const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(18, 7, 2),
+        material
+    );
+
+    wall.position.set(0, 3.5, -30);
+    castle.add(wall);
+
+    for (let x of [-8, 8]) {
+        const tower = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 2.5, 12, 8),
+            material
+        );
+
+        tower.position.set(x, 6, -30);
+        castle.add(tower);
     }
-];
 
-let knight, zombies, pickups, projectiles, particles;
-let score, wave, gameOver;
-let keys = {};
+    scene.add(castle);
+}
+
+createCastle();
+
+// Rycerz
+function createKnight() {
+    const knight = new THREE.Group();
+
+    const armor = new THREE.MeshStandardMaterial({
+        color: 0x71849b,
+        metalness: 0.6,
+        roughness: 0.4
+    });
+
+    const darkArmor = new THREE.MeshStandardMaterial({
+        color: 0x35455a,
+        metalness: 0.4
+    });
+
+    const skin = new THREE.MeshStandardMaterial({
+        color: 0xc5a17b
+    });
+
+    function part(geometry, material, x, y, z) {
+        const mesh = new THREE.Mesh(geometry, material);
+
+        mesh.position.set(x, y, z);
+        mesh.castShadow = true;
+
+        knight.add(mesh);
+
+        return mesh;
+    }
+
+    // Ciało
+    part(
+        new THREE.BoxGeometry(1.2, 1.6, 0.7),
+        armor,
+        0, 1.7, 0
+    );
+
+    // Hełm
+    part(
+        new THREE.BoxGeometry(0.9, 0.9, 0.9),
+        armor,
+        0, 3, 0
+    );
+
+    part(
+        new THREE.BoxGeometry(0.7, 0.15, 0.1),
+        darkArmor,
+        0, 2.9, 0.48
+    );
+
+    // Nogi
+    part(
+        new THREE.BoxGeometry(0.45, 1.1, 0.5),
+        darkArmor,
+        -0.35, 0.55, 0
+    );
+
+    part(
+        new THREE.BoxGeometry(0.45, 1.1, 0.5),
+        darkArmor,
+        0.35, 0.55, 0
+    );
+
+    // Tarcza
+    part(
+        new THREE.BoxGeometry(0.8, 1.2, 0.15),
+        new THREE.MeshStandardMaterial({
+            color: 0x9b6338
+        }),
+        -0.85, 1.7, 0
+    );
+
+    // Miecz
+    const sword = new THREE.Group();
+
+    const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.15, 2.2, 0.2),
+        new THREE.MeshStandardMaterial({
+            color: 0xe2e8ee,
+            metalness: 0.8
+        })
+    );
+
+    blade.position.y = 1.1;
+    sword.add(blade);
+
+    const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(0.35, 0.15, 0.3),
+        new THREE.MeshStandardMaterial({
+            color: 0x8b5e35
+        })
+    );
+
+    sword.add(handle);
+
+    sword.position.set(0.85, 1.4, 0.4);
+    sword.rotation.z = -0.5;
+
+    knight.add(sword);
+
+    knight.userData.sword = sword;
+
+    scene.add(knight);
+
+    return knight;
+}
+
+const knight = createKnight();
+
+// Zombie
+function createZombie() {
+    const zombie = new THREE.Group();
+
+    const green = new THREE.MeshStandardMaterial({
+        color: 0x718d4b
+    });
+
+    const darkGreen = new THREE.MeshStandardMaterial({
+        color: 0x394d2c
+    });
+
+    function part(geometry, material, x, y, z) {
+        const mesh = new THREE.Mesh(geometry, material);
+
+        mesh.position.set(x, y, z);
+        mesh.castShadow = true;
+
+        zombie.add(mesh);
+
+        return mesh;
+    }
+
+    part(
+        new THREE.BoxGeometry(1.1, 1.5, 0.7),
+        green,
+        0, 1.4, 0
+    );
+
+    part(
+        new THREE.BoxGeometry(0.9, 0.9, 0.9),
+        green,
+        0, 2.6, 0
+    );
+
+    part(
+        new THREE.BoxGeometry(0.15, 0.15, 0.1),
+        darkGreen,
+        -0.2, 2.7, 0.48
+    );
+
+    part(
+        new THREE.BoxGeometry(0.15, 0.15, 0.1),
+        darkGreen,
+        0.2, 2.7, 0.48
+    );
+
+    part(
+        new THREE.BoxGeometry(0.35, 1, 0.4),
+        darkGreen,
+        -0.3, 0.5, 0
+    );
+
+    part(
+        new THREE.BoxGeometry(0.35, 1, 0.4),
+        darkGreen,
+        0.3, 0.5, 0
+    );
+
+    scene.add(zombie);
+
+    zombie.userData.health = 1;
+    zombie.userData.speed = 2 + Math.random();
+
+    return zombie;
+}
+
+// Stan gry
+let zombies = [];
+let score = 0;
+let health = 100;
+let wave = 1;
+let gameRunning = false;
+let spawnTimer = 0;
 let attackCooldown = 0;
 let attackAnimation = 0;
-let spawnTimer = 0;
-let pickupTimer = 0;
-let lastTime = 0;
 
-function restartGame() {
-    knight = {
-        x: W / 2,
-        y: H / 2,
-        health: 100,
-        speed: 230,
-        direction: 0,
-        invincible: 0,
-        weapon: 0,
-        inventory: [0]
-    };
+const keys = {};
 
-    zombies = [];
-    pickups = [];
-    projectiles = [];
-    particles = [];
-
-    score = 0;
-    wave = 1;
-    gameOver = false;
-    attackCooldown = 0;
-    attackAnimation = 0;
-    spawnTimer = 0;
-    pickupTimer = 0;
-
-    // Pierwsza broń leży niedaleko gracza
-    spawnPickup(470, 250, 1);
-    spawnPickup(350, 350, 2);
-    spawnPickup(600, 400, 3);
-
-    updateUI();
-    lastTime = performance.now();
-}
-
-function updateUI() {
-    ui.score.textContent = score;
-    ui.health.textContent = Math.ceil(knight.health);
-    ui.wave.textContent = wave;
-    ui.weapon.textContent = weapons[knight.weapon].name;
-}
+let playerDirection = 0;
 
 window.addEventListener("keydown", e => {
     keys[e.key.toLowerCase()] = true;
@@ -174,17 +435,8 @@ window.addEventListener("keydown", e => {
         attack();
     }
 
-    if (e.key.toLowerCase() === "e") {
-        pickupWeapon();
-    }
-
-    if (["1", "2", "3", "4"].includes(e.key)) {
-        const index = Number(e.key) - 1;
-
-        if (knight.inventory.includes(index)) {
-            knight.weapon = index;
-            updateUI();
-        }
+    if (e.key === "Escape" && gameRunning) {
+        pauseGame();
     }
 });
 
@@ -192,493 +444,216 @@ window.addEventListener("keyup", e => {
     keys[e.key.toLowerCase()] = false;
 });
 
-function spawnPickup(x, y, weaponIndex) {
-    pickups.push({
-        x, y,
-        weapon: weaponIndex,
-        phase: Math.random() * 6
-    });
-}
+window.addEventListener("blur", () => {
+    if (gameRunning) pauseGame();
+});
 
-function pickupWeapon() {
-    if (gameOver) return;
+startButton.onclick = () => {
+    if (gameRunning) return;
 
-    const index = pickups.findIndex(p =>
-        Math.hypot(p.x - knight.x, p.y - knight.y) < 65
-    );
+    restartGame();
+};
 
-    if (index === -1) {
-        ui.message.textContent = "Podejdź bliżej broni!";
-        return;
-    }
+function restartGame() {
+    zombies.forEach(z => scene.remove(z));
+    zombies = [];
 
-    const item = pickups[index];
+    score = 0;
+    health = 100;
+    wave = 1;
 
-    if (!knight.inventory.includes(item.weapon)) {
-        knight.inventory.push(item.weapon);
-    }
+    knight.position.set(0, 0, 0);
+    knight.rotation.y = 0;
 
-    knight.weapon = item.weapon;
+    playerDirection = 0;
 
-    ui.message.textContent =
-        "Podniesiono: " + weapons[item.weapon].name;
+    spawnTimer = 0;
+    attackCooldown = 0;
+    attackAnimation = 0;
 
-    pickups.splice(index, 1);
+    gameRunning = true;
+
+    menu.style.display = "none";
+    hud.style.display = "block";
+
     updateUI();
 }
 
+function pauseGame() {
+    gameRunning = false;
+    menu.style.display = "flex";
+    hud.style.display = "none";
+
+    message.textContent = "Gra zatrzymana";
+    startButton.textContent = "WRÓĆ DO GRY";
+}
+
+function updateUI() {
+    scoreText.textContent = score;
+    healthText.textContent = Math.ceil(health);
+    waveText.textContent = wave;
+    enemiesText.textContent = zombies.length;
+}
+
 function attack() {
-    if (gameOver || attackCooldown > 0) return;
+    if (!gameRunning || attackCooldown > 0) return;
 
-    const weapon = weapons[knight.weapon];
+    attackCooldown = 0.6;
+    attackAnimation = 0.3;
 
-    attackCooldown = weapon.cooldown;
-    attackAnimation = 0.25;
-
-    if (weapon.type === "ranged") {
-        projectiles.push({
-            x: knight.x + Math.cos(knight.direction) * 25,
-            y: knight.y + Math.sin(knight.direction) * 25,
-            vx: Math.cos(knight.direction) * 500,
-            vy: Math.sin(knight.direction) * 500,
-            damage: weapon.damage,
-            life: 1.2
-        });
-
-        return;
-    }
+    knight.userData.sword.rotation.z = -1.8;
 
     zombies.forEach(z => {
-        const dx = z.x - knight.x;
-        const dy = z.y - knight.y;
-        const distance = Math.hypot(dx, dy);
+        const dx = z.position.x - knight.position.x;
+        const dz = z.position.z - knight.position.z;
 
-        let angle = Math.atan2(dy, dx) - knight.direction;
+        const distance = Math.hypot(dx, dz);
 
-        while (angle > Math.PI) angle -= Math.PI * 2;
-        while (angle < -Math.PI) angle += Math.PI * 2;
+        if (distance < 4) {
+            z.userData.health -= 1;
 
-        if (
-            distance < weapon.range + z.radius &&
-            Math.abs(angle) < 1.1
-        ) {
-            hitZombie(z, weapon.damage);
-        }
-    });
-
-    removeDeadZombies();
-}
-
-function hitZombie(z, damage) {
-    z.health -= damage;
-
-    const angle = Math.atan2(
-        z.y - knight.y,
-        z.x - knight.x
-    );
-
-    z.vx = Math.cos(angle) * 260;
-    z.vy = Math.sin(angle) * 260;
-
-    for (let i = 0; i < 8; i++) {
-        particles.push({
-            x: z.x,
-            y: z.y,
-            vx: (Math.random() - 0.5) * 150,
-            vy: (Math.random() - 0.5) * 150,
-            life: 0.4
-        });
-    }
-}
-
-function removeDeadZombies() {
-    zombies = zombies.filter(z => {
-        if (z.health <= 0) {
-            score += 10;
-
-            // Czasami zombie upuszcza nową broń
-            if (Math.random() < 0.18) {
-                const weaponIndex = Math.floor(
-                    Math.random() * weapons.length
-                );
-
-                spawnPickup(z.x, z.y, weaponIndex);
+            if (z.userData.health <= 0) {
+                score += 10;
+                scene.remove(z);
             }
-
-            updateUI();
-            return false;
         }
-
-        return true;
     });
+
+    zombies = zombies.filter(z => z.userData.health > 0);
+
+    updateUI();
 }
 
 function spawnZombie() {
-    const side = Math.floor(Math.random() * 4);
+    const zombie = createZombie();
 
-    let x, y;
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 20 + Math.random() * 10;
 
-    if (side === 0) {
-        x = Math.random() * W;
-        y = -25;
-    } else if (side === 1) {
-        x = W + 25;
-        y = Math.random() * H;
-    } else if (side === 2) {
-        x = Math.random() * W;
-        y = H + 25;
-    } else {
-        x = -25;
-        y = Math.random() * H;
-    }
+    zombie.position.set(
+        knight.position.x + Math.cos(angle) * distance,
+        0,
+        knight.position.z + Math.sin(angle) * distance
+    );
 
-    zombies.push({
-        x, y,
-        vx: 0,
-        vy: 0,
-        radius: 18,
-        speed: 45 + wave * 5 + Math.random() * 20,
-        health: wave >= 5 ? 2 : 1,
-        phase: Math.random() * 6
-    });
+    zombies.push(zombie);
 }
 
 function update(dt) {
-    if (gameOver) return;
+    if (!gameRunning) return;
 
     let dx = 0;
-    let dy = 0;
+    let dz = 0;
 
-    if (keys["w"] || keys["arrowup"]) dy--;
-    if (keys["s"] || keys["arrowdown"]) dy++;
-    if (keys["a"] || keys["arrowleft"]) dx--;
-    if (keys["d"] || keys["arrowright"]) dx++;
+    if (keys["w"] || keys["arrowup"]) dz -= 1;
+    if (keys["s"] || keys["arrowdown"]) dz += 1;
+    if (keys["a"] || keys["arrowleft"]) dx -= 1;
+    if (keys["d"] || keys["arrowright"]) dx += 1;
 
-    if (dx || dy) {
-        const length = Math.hypot(dx, dy);
+    if (dx || dz) {
+        const length = Math.hypot(dx, dz);
 
         dx /= length;
-        dy /= length;
+        dz /= length;
 
-        knight.x += dx * knight.speed * dt;
-        knight.y += dy * knight.speed * dt;
+        knight.position.x += dx * 7 * dt;
+        knight.position.z += dz * 7 * dt;
 
-        knight.direction = Math.atan2(dy, dx);
+        playerDirection = Math.atan2(dx, dz);
+        knight.rotation.y = playerDirection;
     }
-
-    knight.x = Math.max(20, Math.min(W - 20, knight.x));
-    knight.y = Math.max(20, Math.min(H - 20, knight.y));
 
     attackCooldown = Math.max(0, attackCooldown - dt);
     attackAnimation = Math.max(0, attackAnimation - dt);
-    knight.invincible = Math.max(0, knight.invincible - dt);
+
+    if (attackAnimation <= 0) {
+        knight.userData.sword.rotation.z = -0.5;
+    }
 
     spawnTimer += dt;
 
-    if (spawnTimer > Math.max(0.45, 1.6 - wave * 0.08)) {
+    if (spawnTimer > Math.max(0.5, 2 - wave * 0.1)) {
         spawnZombie();
         spawnTimer = 0;
     }
 
     zombies.forEach(z => {
-        const dx = knight.x - z.x;
-        const dy = knight.y - z.y;
-        const distance = Math.hypot(dx, dy);
+        const dx = knight.position.x - z.position.x;
+        const dz = knight.position.z - z.position.z;
 
-        if (distance > 0) {
-            z.x += dx / distance * z.speed * dt;
-            z.y += dy / distance * z.speed * dt;
+        const distance = Math.hypot(dx, dz);
+
+        if (distance > 1.5) {
+            z.position.x += dx / distance * z.userData.speed * dt;
+            z.position.z += dz / distance * z.userData.speed * dt;
         }
 
-        z.x += z.vx * dt;
-        z.y += z.vy * dt;
-
-        z.vx *= Math.pow(0.03, dt);
-        z.vy *= Math.pow(0.03, dt);
-
-        z.phase += dt * 5;
-
-        if (
-            distance < knight.radius + z.radius &&
-            knight.invincible <= 0
-        ) {
-            knight.health -= 15;
-            knight.invincible = 0.7;
+        if (distance < 2) {
+            health -= 15 * dt;
             updateUI();
         }
     });
 
-    projectiles.forEach(p => {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.life -= dt;
+    wave = Math.floor(score / 100) + 1;
 
-        zombies.forEach(z => {
-            if (Math.hypot(p.x - z.x, p.y - z.y) < z.radius + 8) {
-                if (p.life > 0) {
-                    hitZombie(z, p.damage);
-                    p.life = 0;
-                }
-            }
-        });
-    });
+    if (health <= 0) {
+        health = 0;
+        gameRunning = false;
 
-    projectiles = projectiles.filter(p => p.life > 0);
-    removeDeadZombies();
+        menu.style.display = "flex";
+        hud.style.display = "none";
 
-    particles.forEach(p => {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.life -= dt;
-    });
-
-    particles = particles.filter(p => p.life > 0);
-
-    if (score >= wave * 100) {
-        wave++;
-        updateUI();
+        message.textContent = "Koniec gry! Zdobyte punkty: " + score;
+        startButton.textContent = "ZAGRAJ PONOWNIE";
     }
 
-    if (knight.health <= 0) {
-        knight.health = 0;
-        gameOver = true;
-        updateUI();
-    }
+    updateUI();
 }
 
-function drawBackground() {
-    ctx.fillStyle = "#263b29";
-    ctx.fillRect(0, 0, W, H);
+// Kamera za rycerzem
+function updateCamera() {
+    const distance = 9;
+    const height = 5;
 
-    for (let i = 0; i < 180; i++) {
-        const x = (i * 137) % W;
-        const y = (i * 83) % H;
+    const targetX = knight.position.x -
+        Math.sin(playerDirection) * distance;
 
-        ctx.fillStyle = "#354f35";
-        ctx.fillRect(x, y, 3, 3);
-    }
+    const targetZ = knight.position.z -
+        Math.cos(playerDirection) * distance;
 
-    // Mgła
-    const gradient = ctx.createRadialGradient(
-        W / 2, H / 2, 100,
-        W / 2, H / 2, 500
+    camera.position.x += (targetX - camera.position.x) * 0.1;
+    camera.position.y += (height - camera.position.y) * 0.1;
+    camera.position.z += (targetZ - camera.position.z) * 0.1;
+
+    camera.lookAt(
+        knight.position.x,
+        knight.position.y + 2,
+        knight.position.z
     );
-
-    gradient.addColorStop(0, "rgba(0,0,0,0)");
-    gradient.addColorStop(1, "rgba(0,0,0,0.5)");
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, W, H);
 }
 
-function drawKnight() {
-    ctx.save();
-    ctx.translate(knight.x, knight.y);
+let lastTime = performance.now();
 
-    // Cień
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.beginPath();
-    ctx.ellipse(0, 13, 20, 9, 0, 0, Math.PI * 2);
-    ctx.fill();
+function animate(time) {
+    requestAnimationFrame(animate);
 
-    // Tarcza
-    ctx.fillStyle = "#795d38";
-    ctx.fillRect(-20, -5, 12, 25);
-
-    // Zbroja
-    ctx.fillStyle = "#aeb8c2";
-    ctx.fillRect(-11, -12, 22, 27);
-
-    ctx.fillStyle = "#5a6b85";
-    ctx.fillRect(-8, -8, 16, 20);
-
-    // Hełm
-    ctx.fillStyle = "#c5cbd1";
-    ctx.beginPath();
-    ctx.arc(0, -15, 13, Math.PI, 0);
-    ctx.fill();
-
-    ctx.fillRect(-13, -15, 26, 8);
-
-    ctx.fillStyle = "#20242a";
-    ctx.fillRect(-7, -12, 14, 4);
-
-    // Broń
-    const weapon = weapons[knight.weapon];
-
-    ctx.save();
-    ctx.rotate(knight.direction);
-
-    ctx.fillStyle = weapon.color;
-
-    if (knight.weapon === 1) {
-        // Topór
-        ctx.fillRect(15, -3, 38, 6);
-        ctx.fillRect(42, -13, 12, 26);
-    } else if (knight.weapon === 2) {
-        // Włócznia
-        ctx.fillRect(10, -2, 90, 4);
-        ctx.beginPath();
-        ctx.moveTo(100, 0);
-        ctx.lineTo(90, -8);
-        ctx.lineTo(90, 8);
-        ctx.fill();
-    } else if (knight.weapon === 3) {
-        // Kusza
-        ctx.fillStyle = "#795d38";
-        ctx.fillRect(12, -9, 22, 18);
-        ctx.fillStyle = "#ddd";
-        ctx.fillRect(17, -2, 30, 4);
-    } else {
-        // Miecz
-        ctx.fillRect(13, -3, 42, 6);
-        ctx.fillStyle = "#735133";
-        ctx.fillRect(8, -5, 7, 10);
-    }
-
-    ctx.restore();
-
-    // Efekt ataku
-    if (attackAnimation > 0) {
-        ctx.strokeStyle = "#f5d77b";
-        ctx.lineWidth = 6;
-
-        ctx.beginPath();
-        ctx.arc(
-            0, 0,
-            weapons[knight.weapon].range,
-            knight.direction - 0.9,
-            knight.direction + 0.9
-        );
-
-        ctx.stroke();
-    }
-
-    ctx.restore();
-}
-
-function drawZombie(z) {
-    ctx.save();
-    ctx.translate(z.x, z.y);
-
-    const walk = Math.sin(z.phase) * 4;
-
-    // Nogi
-    ctx.fillStyle = "#34472c";
-    ctx.fillRect(-11, 7, 8, 15 + walk);
-    ctx.fillRect(3, 7, 8, 15 - walk);
-
-    // Ciało
-    ctx.fillStyle = "#647d48";
-    ctx.fillRect(-15, -9, 30, 23);
-
-    // Głowa
-    ctx.fillStyle = "#8ca96a";
-    ctx.beginPath();
-    ctx.arc(0, -16, 13, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Oczy
-    ctx.fillStyle = "#1c2419";
-    ctx.fillRect(-7, -19, 4, 4);
-    ctx.fillRect(4, -19, 4, 4);
-
-    // Ręce
-    ctx.strokeStyle = "#8ca96a";
-    ctx.lineWidth = 7;
-
-    ctx.beginPath();
-    ctx.moveTo(-12, -4);
-    ctx.lineTo(-22, 8 + walk);
-    ctx.moveTo(12, -4);
-    ctx.lineTo(22, 8 - walk);
-    ctx.stroke();
-
-    ctx.restore();
-}
-
-function drawPickups() {
-    pickups.forEach(p => {
-        const weapon = weapons[p.weapon];
-        const bob = Math.sin(performance.now() / 200 + p.phase) * 5;
-
-        ctx.save();
-        ctx.translate(p.x, p.y + bob);
-
-        ctx.fillStyle = "rgba(255,220,100,0.2)";
-        ctx.beginPath();
-        ctx.arc(0, 0, 24, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = weapon.color;
-        ctx.fillRect(-15, -3, 30, 6);
-
-        ctx.fillStyle = "#fff";
-        ctx.font = "12px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(weapon.name, 0, 35);
-
-        ctx.restore();
-    });
-}
-
-function drawProjectiles() {
-    projectiles.forEach(p => {
-        ctx.fillStyle = "#f5d77b";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-        ctx.fill();
-    });
-}
-
-function drawParticles() {
-    particles.forEach(p => {
-        ctx.globalAlpha = Math.max(0, p.life / 0.4);
-        ctx.fillStyle = "#a5c66b";
-        ctx.fillRect(p.x, p.y, 5, 5);
-    });
-
-    ctx.globalAlpha = 1;
-}
-
-function draw() {
-    drawBackground();
-    drawPickups();
-
-    zombies.forEach(drawZombie);
-
-    drawProjectiles();
-    drawKnight();
-    drawParticles();
-
-    if (gameOver) {
-        ctx.fillStyle = "rgba(0,0,0,0.8)";
-        ctx.fillRect(0, 0, W, H);
-
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#e9c46a";
-        ctx.font = "bold 48px Arial";
-        ctx.fillText("KONIEC GRY", W / 2, 230);
-
-        ctx.fillStyle = "white";
-        ctx.font = "26px Arial";
-        ctx.fillText("Punkty: " + score, W / 2, 280);
-    }
-}
-
-function loop(timestamp) {
-    const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
-
-    lastTime = timestamp;
+    const dt = Math.min((time - lastTime) / 1000, 0.05);
+    lastTime = time;
 
     update(dt);
-    draw();
+    updateCamera();
 
-    requestAnimationFrame(loop);
+    renderer.render(scene, camera);
 }
 
-restartGame();
-requestAnimationFrame(loop);
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate(performance.now());
 </script>
 
 </body>
