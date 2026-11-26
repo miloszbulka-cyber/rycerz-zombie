@@ -1,0 +1,562 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rycerz kontra Zombie</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #10120f;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+h1 {
+    color: #e9c46a;
+    margin: 22px 0 5px;
+    letter-spacing: 2px;
+}
+
+.subtitle {
+    color: #aaa;
+}
+
+#panel {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    flex-wrap: wrap;
+    margin: 15px;
+    font-size: 18px;
+}
+
+canvas {
+    display: block;
+    width: 900px;
+    max-width: 96%;
+    height: auto;
+    margin: 15px auto;
+    border: 3px solid #68734a;
+    border-radius: 8px;
+    box-shadow: 0 0 30px #000;
+}
+
+button {
+    background: #c79b43;
+    color: #17130b;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 6px;
+    font-size: 17px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #edc66c;
+}
+
+.instructions {
+    color: #aaa;
+    margin: 20px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>RYCERZ KONTRA ZOMBIE</h1>
+<p class="subtitle">Przetrwaj noc w królestwie umarłych</p>
+
+<div id="panel">
+    <div>⚔ Punkty: <span id="score">0</span></div>
+    <div>❤ Zdrowie: <span id="health">100</span></div>
+    <div>☠ Fala: <span id="wave">1</span></div>
+</div>
+
+<canvas id="game" width="900" height="550"></canvas>
+
+<button onclick="restartGame()">NOWA GRA</button>
+
+<p class="instructions">
+WASD / strzałki — ruch | SPACJA — atak mieczem
+</p>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const scoreText = document.getElementById("score");
+const healthText = document.getElementById("health");
+const waveText = document.getElementById("wave");
+
+const W = canvas.width;
+const H = canvas.height;
+
+let knight;
+let zombies;
+let particles;
+let score;
+let wave;
+let gameOver;
+let keys = {};
+
+let attackCooldown = 0;
+let attackAnimation = 0;
+let spawnTimer = 0;
+let lastTime = 0;
+let nextWaveScore = 100;
+
+const grass = [];
+
+for (let i = 0; i < 220; i++) {
+    grass.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        size: 2 + Math.random() * 4
+    });
+}
+
+function restartGame() {
+    knight = {
+        x: W / 2,
+        y: H / 2,
+        speed: 230,
+        health: 100,
+        direction: 0,
+        radius: 17,
+        invincible: 0
+    };
+
+    zombies = [];
+    particles = [];
+
+    score = 0;
+    wave = 1;
+    gameOver = false;
+
+    attackCooldown = 0;
+    attackAnimation = 0;
+    spawnTimer = 0;
+    nextWaveScore = 100;
+
+    updateUI();
+
+    lastTime = performance.now();
+}
+
+function updateUI() {
+    scoreText.textContent = score;
+    healthText.textContent = Math.max(0, Math.ceil(knight.health));
+    waveText.textContent = wave;
+}
+
+window.addEventListener("keydown", e => {
+    keys[e.key.toLowerCase()] = true;
+
+    if (e.code === "Space") {
+        e.preventDefault();
+        attack();
+    }
+});
+
+window.addEventListener("keyup", e => {
+    keys[e.key.toLowerCase()] = false;
+});
+
+function attack() {
+    if (gameOver || attackCooldown > 0) return;
+
+    attackCooldown = 0.38;
+    attackAnimation = 0.25;
+
+    const range = 105;
+    const angle = knight.direction;
+
+    zombies.forEach(z => {
+        const dx = z.x - knight.x;
+        const dy = z.y - knight.y;
+
+        const distance = Math.hypot(dx, dy);
+        const targetAngle = Math.atan2(dy, dx);
+
+        let difference = targetAngle - angle;
+
+        while (difference > Math.PI) difference -= Math.PI * 2;
+        while (difference < -Math.PI) difference += Math.PI * 2;
+
+        if (
+            distance < range + z.radius &&
+            Math.abs(difference) < 1.15
+        ) {
+            z.health -= 1;
+
+            // Odrzut zombie
+            const force = 240;
+
+            z.vx = Math.cos(angle) * force;
+            z.vy = Math.sin(angle) * force;
+
+            // Efekt trafienia
+            for (let i = 0; i < 10; i++) {
+                particles.push({
+                    x: z.x,
+                    y: z.y,
+                    vx: (Math.random() - 0.5) * 180,
+                    vy: (Math.random() - 0.5) * 180,
+                    life: 0.4,
+                    color: "#a5c66b"
+                });
+            }
+        }
+    });
+
+    zombies = zombies.filter(z => {
+        if (z.health <= 0) {
+            score += 10;
+            return false;
+        }
+        return true;
+    });
+
+    updateUI();
+}
+
+function spawnZombie() {
+    const side = Math.floor(Math.random() * 4);
+
+    let x, y;
+
+    if (side === 0) {
+        x = Math.random() * W;
+        y = -30;
+    } else if (side === 1) {
+        x = W + 30;
+        y = Math.random() * H;
+    } else if (side === 2) {
+        x = Math.random() * W;
+        y = H + 30;
+    } else {
+        x = -30;
+        y = Math.random() * H;
+    }
+
+    zombies.push({
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        radius: 18,
+        speed: 45 + wave * 5 + Math.random() * 20,
+        health: wave >= 5 ? 2 : 1,
+        phase: Math.random() * Math.PI * 2
+    });
+}
+
+function update(dt) {
+    if (gameOver) return;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (keys["w"] || keys["arrowup"]) dy--;
+    if (keys["s"] || keys["arrowdown"]) dy++;
+    if (keys["a"] || keys["arrowleft"]) dx--;
+    if (keys["d"] || keys["arrowright"]) dx++;
+
+    if (dx || dy) {
+        const length = Math.hypot(dx, dy);
+
+        dx /= length;
+        dy /= length;
+
+        knight.x += dx * knight.speed * dt;
+        knight.y += dy * knight.speed * dt;
+
+        knight.direction = Math.atan2(dy, dx);
+    }
+
+    knight.x = Math.max(25, Math.min(W - 25, knight.x));
+    knight.y = Math.max(25, Math.min(H - 25, knight.y));
+
+    attackCooldown = Math.max(0, attackCooldown - dt);
+    attackAnimation = Math.max(0, attackAnimation - dt);
+    knight.invincible = Math.max(0, knight.invincible - dt);
+
+    spawnTimer += dt;
+
+    const spawnDelay = Math.max(0.4, 1.5 - wave * 0.08);
+
+    if (spawnTimer > spawnDelay) {
+        spawnZombie();
+        spawnTimer = 0;
+    }
+
+    zombies.forEach(z => {
+        const dx = knight.x - z.x;
+        const dy = knight.y - z.y;
+
+        const distance = Math.hypot(dx, dy);
+
+        if (distance > 0) {
+            z.x += dx / distance * z.speed * dt;
+            z.y += dy / distance * z.speed * dt;
+        }
+
+        // Odrzut po uderzeniu
+        z.x += z.vx * dt;
+        z.y += z.vy * dt;
+
+        z.vx *= Math.pow(0.04, dt);
+        z.vy *= Math.pow(0.04, dt);
+
+        z.phase += dt * 5;
+
+        if (
+            distance < knight.radius + z.radius &&
+            knight.invincible <= 0
+        ) {
+            knight.health -= 15;
+            knight.invincible = 0.7;
+            updateUI();
+        }
+    });
+
+    particles.forEach(p => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+    });
+
+    particles = particles.filter(p => p.life > 0);
+
+    if (score >= nextWaveScore) {
+        wave++;
+        nextWaveScore += 100;
+        updateUI();
+    }
+
+    if (knight.health <= 0) {
+        knight.health = 0;
+        gameOver = true;
+        updateUI();
+    }
+}
+
+function drawBackground() {
+    ctx.fillStyle = "#243b29";
+    ctx.fillRect(0, 0, W, H);
+
+    // Trawa
+    grass.forEach(g => {
+        ctx.fillStyle = "#354f35";
+        ctx.fillRect(g.x, g.y, g.size, g.size);
+    });
+
+    // Kamienie
+    for (let i = 0; i < 12; i++) {
+        const x = (i * 173 + 70) % W;
+        const y = (i * 97 + 40) % H;
+
+        ctx.fillStyle = "#4b5149";
+        ctx.beginPath();
+        ctx.ellipse(x, y, 12, 8, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Mgła
+    const gradient = ctx.createRadialGradient(
+        W / 2, H / 2, 80,
+        W / 2, H / 2, 450
+    );
+
+    gradient.addColorStop(0, "rgba(0,0,0,0)");
+    gradient.addColorStop(1, "rgba(0,0,0,0.55)");
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, W, H);
+}
+
+function drawKnight() {
+    ctx.save();
+    ctx.translate(knight.x, knight.y);
+
+    // Cień
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, 13, 20, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tarcza
+    ctx.fillStyle = "#795d38";
+    ctx.fillRect(-20, -5, 12, 25);
+
+    ctx.fillStyle = "#d4b16a";
+    ctx.fillRect(-17, -2, 6, 19);
+
+    // Zbroja
+    ctx.fillStyle = "#aeb8c2";
+    ctx.fillRect(-11, -12, 22, 27);
+
+    ctx.fillStyle = "#5a6b85";
+    ctx.fillRect(-8, -8, 16, 20);
+
+    // Hełm
+    ctx.fillStyle = "#c5cbd1";
+    ctx.beginPath();
+    ctx.arc(0, -15, 13, Math.PI, 0);
+    ctx.fill();
+
+    ctx.fillRect(-13, -15, 26, 8);
+
+    ctx.fillStyle = "#20242a";
+    ctx.fillRect(-7, -12, 14, 4);
+
+    // Miecz
+    ctx.save();
+    ctx.rotate(knight.direction);
+
+    ctx.fillStyle = "#ddd";
+    ctx.fillRect(13, -3, 42, 6);
+
+    ctx.fillStyle = "#f7f7f7";
+    ctx.fillRect(13, -2, 38, 2);
+
+    ctx.fillStyle = "#735133";
+    ctx.fillRect(8, -5, 7, 10);
+
+    ctx.restore();
+
+    // Animacja ataku
+    if (attackAnimation > 0) {
+        ctx.strokeStyle = "#f5d77b";
+        ctx.lineWidth = 7;
+
+        ctx.beginPath();
+        ctx.arc(
+            0, 0, 70,
+            knight.direction - 1.1,
+            knight.direction + 1.1
+        );
+
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
+function drawZombie(z) {
+    ctx.save();
+    ctx.translate(z.x, z.y);
+
+    // Cień
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(0, 12, 19, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nogi
+    const walk = Math.sin(z.phase) * 4;
+
+    ctx.fillStyle = "#34472c";
+    ctx.fillRect(-11, 7, 8, 15 + walk);
+    ctx.fillRect(3, 7, 8, 15 - walk);
+
+    // Ciało
+    ctx.fillStyle = "#647d48";
+    ctx.fillRect(-15, -9, 30, 23);
+
+    ctx.fillStyle = "#40572f";
+    ctx.fillRect(-12, -6, 24, 17);
+
+    // Głowa
+    ctx.fillStyle = "#8ca96a";
+    ctx.beginPath();
+    ctx.arc(0, -16, 13, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Oczy
+    ctx.fillStyle = "#1c2419";
+    ctx.fillRect(-7, -19, 4, 4);
+    ctx.fillRect(4, -19, 4, 4);
+
+    // Usta
+    ctx.fillStyle = "#303b23";
+    ctx.fillRect(-5, -11, 10, 3);
+
+    // Ręce
+    ctx.strokeStyle = "#8ca96a";
+    ctx.lineWidth = 7;
+
+    ctx.beginPath();
+    ctx.moveTo(-12, -4);
+    ctx.lineTo(-22, 8 + walk);
+    ctx.moveTo(12, -4);
+    ctx.lineTo(22, 8 - walk);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+function drawParticles() {
+    particles.forEach(p => {
+        ctx.globalAlpha = Math.max(0, p.life / 0.4);
+        ctx.fillStyle = p.color;
+
+        ctx.fillRect(p.x, p.y, 5, 5);
+    });
+
+    ctx.globalAlpha = 1;
+}
+
+function draw() {
+    drawBackground();
+
+    zombies.forEach(drawZombie);
+    drawKnight();
+    drawParticles();
+
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.textAlign = "center";
+
+        ctx.fillStyle = "#e9c46a";
+        ctx.font = "bold 48px Arial";
+        ctx.fillText("KONIEC GRY", W / 2, 230);
+
+        ctx.fillStyle = "white";
+        ctx.font = "26px Arial";
+        ctx.fillText("Punkty: " + score, W / 2, 280);
+
+        ctx.font = "20px Arial";
+        ctx.fillText("Kliknij NOWA GRA", W / 2, 330);
+    }
+}
+
+function loop(timestamp) {
+    const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+
+    lastTime = timestamp;
+
+    update(dt);
+    draw();
+
+    requestAnimationFrame(loop);
+}
+
+restartGame();
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
