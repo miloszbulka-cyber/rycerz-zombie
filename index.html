@@ -3,160 +3,167 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rycerz kontra Zombie</title>
-
 <style>
-* {
-    box-sizing: border-box;
-}
-
+* { box-sizing: border-box; }
 body {
     margin: 0;
-    background: #10120f;
+    background: #101510;
     color: white;
     font-family: Arial, sans-serif;
     text-align: center;
 }
-
-h1 {
-    color: #e9c46a;
-    margin: 22px 0 5px;
-    letter-spacing: 2px;
-}
-
-.subtitle {
-    color: #aaa;
-}
-
+h1 { color: #e9c46a; }
 #panel {
     display: flex;
     justify-content: center;
-    gap: 30px;
+    gap: 25px;
     flex-wrap: wrap;
     margin: 15px;
     font-size: 18px;
 }
-
 canvas {
-    display: block;
     width: 900px;
     max-width: 96%;
     height: auto;
-    margin: 15px auto;
-    border: 3px solid #68734a;
-    border-radius: 8px;
-    box-shadow: 0 0 30px #000;
+    border: 3px solid #69764c;
+    background: #263b29;
 }
-
 button {
-    background: #c79b43;
-    color: #17130b;
     padding: 12px 25px;
-    border: none;
+    margin: 12px;
+    background: #d7ad57;
+    border: 0;
     border-radius: 6px;
-    font-size: 17px;
     font-weight: bold;
     cursor: pointer;
 }
-
-button:hover {
-    background: #edc66c;
-}
-
-.instructions {
-    color: #aaa;
-    margin: 20px;
-}
+#message { color: #e9c46a; min-height: 24px; }
 </style>
 </head>
-
 <body>
 
 <h1>RYCERZ KONTRA ZOMBIE</h1>
-<p class="subtitle">Przetrwaj noc w królestwie umarłych</p>
 
 <div id="panel">
-    <div>⚔ Punkty: <span id="score">0</span></div>
-    <div>❤ Zdrowie: <span id="health">100</span></div>
-    <div>☠ Fala: <span id="wave">1</span></div>
+    <span>Punkty: <b id="score">0</b></span>
+    <span>Zdrowie: <b id="health">100</b></span>
+    <span>Fala: <b id="wave">1</b></span>
+    <span>Broń: <b id="weapon">Miecz</b></span>
 </div>
 
 <canvas id="game" width="900" height="550"></canvas>
 
+<div id="message">Wybierz broń na mapie i przetrwaj!</div>
+
 <button onclick="restartGame()">NOWA GRA</button>
 
-<p class="instructions">
-WASD / strzałki — ruch | SPACJA — atak mieczem
+<p>
+WASD / strzałki — ruch |
+SPACJA — atak |
+E — podnieś broń |
+1-4 — zmień broń
 </p>
 
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-const scoreText = document.getElementById("score");
-const healthText = document.getElementById("health");
-const waveText = document.getElementById("wave");
-
 const W = canvas.width;
 const H = canvas.height;
 
-let knight;
-let zombies;
-let particles;
-let score;
-let wave;
-let gameOver;
-let keys = {};
+const ui = {
+    score: document.getElementById("score"),
+    health: document.getElementById("health"),
+    wave: document.getElementById("wave"),
+    weapon: document.getElementById("weapon"),
+    message: document.getElementById("message")
+};
 
+const weapons = [
+    {
+        name: "Miecz",
+        damage: 1,
+        range: 75,
+        cooldown: 0.35,
+        color: "#e5e5e5",
+        type: "melee"
+    },
+    {
+        name: "Topór",
+        damage: 2,
+        range: 85,
+        cooldown: 0.75,
+        color: "#c58a49",
+        type: "melee"
+    },
+    {
+        name: "Włócznia",
+        damage: 1,
+        range: 135,
+        cooldown: 0.55,
+        color: "#d8d8d8",
+        type: "melee"
+    },
+    {
+        name: "Kusza",
+        damage: 1,
+        range: 450,
+        cooldown: 0.65,
+        color: "#9b7748",
+        type: "ranged"
+    }
+];
+
+let knight, zombies, pickups, projectiles, particles;
+let score, wave, gameOver;
+let keys = {};
 let attackCooldown = 0;
 let attackAnimation = 0;
 let spawnTimer = 0;
+let pickupTimer = 0;
 let lastTime = 0;
-let nextWaveScore = 100;
-
-const grass = [];
-
-for (let i = 0; i < 220; i++) {
-    grass.push({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        size: 2 + Math.random() * 4
-    });
-}
 
 function restartGame() {
     knight = {
         x: W / 2,
         y: H / 2,
-        speed: 230,
         health: 100,
+        speed: 230,
         direction: 0,
-        radius: 17,
-        invincible: 0
+        invincible: 0,
+        weapon: 0,
+        inventory: [0]
     };
 
     zombies = [];
+    pickups = [];
+    projectiles = [];
     particles = [];
 
     score = 0;
     wave = 1;
     gameOver = false;
-
     attackCooldown = 0;
     attackAnimation = 0;
     spawnTimer = 0;
-    nextWaveScore = 100;
+    pickupTimer = 0;
+
+    // Pierwsza broń leży niedaleko gracza
+    spawnPickup(470, 250, 1);
+    spawnPickup(350, 350, 2);
+    spawnPickup(600, 400, 3);
 
     updateUI();
-
     lastTime = performance.now();
 }
 
 function updateUI() {
-    scoreText.textContent = score;
-    healthText.textContent = Math.max(0, Math.ceil(knight.health));
-    waveText.textContent = wave;
+    ui.score.textContent = score;
+    ui.health.textContent = Math.ceil(knight.health);
+    ui.wave.textContent = wave;
+    ui.weapon.textContent = weapons[knight.weapon].name;
 }
 
 window.addEventListener("keydown", e => {
@@ -166,68 +173,144 @@ window.addEventListener("keydown", e => {
         e.preventDefault();
         attack();
     }
+
+    if (e.key.toLowerCase() === "e") {
+        pickupWeapon();
+    }
+
+    if (["1", "2", "3", "4"].includes(e.key)) {
+        const index = Number(e.key) - 1;
+
+        if (knight.inventory.includes(index)) {
+            knight.weapon = index;
+            updateUI();
+        }
+    }
 });
 
 window.addEventListener("keyup", e => {
     keys[e.key.toLowerCase()] = false;
 });
 
+function spawnPickup(x, y, weaponIndex) {
+    pickups.push({
+        x, y,
+        weapon: weaponIndex,
+        phase: Math.random() * 6
+    });
+}
+
+function pickupWeapon() {
+    if (gameOver) return;
+
+    const index = pickups.findIndex(p =>
+        Math.hypot(p.x - knight.x, p.y - knight.y) < 65
+    );
+
+    if (index === -1) {
+        ui.message.textContent = "Podejdź bliżej broni!";
+        return;
+    }
+
+    const item = pickups[index];
+
+    if (!knight.inventory.includes(item.weapon)) {
+        knight.inventory.push(item.weapon);
+    }
+
+    knight.weapon = item.weapon;
+
+    ui.message.textContent =
+        "Podniesiono: " + weapons[item.weapon].name;
+
+    pickups.splice(index, 1);
+    updateUI();
+}
+
 function attack() {
     if (gameOver || attackCooldown > 0) return;
 
-    attackCooldown = 0.38;
+    const weapon = weapons[knight.weapon];
+
+    attackCooldown = weapon.cooldown;
     attackAnimation = 0.25;
 
-    const range = 105;
-    const angle = knight.direction;
+    if (weapon.type === "ranged") {
+        projectiles.push({
+            x: knight.x + Math.cos(knight.direction) * 25,
+            y: knight.y + Math.sin(knight.direction) * 25,
+            vx: Math.cos(knight.direction) * 500,
+            vy: Math.sin(knight.direction) * 500,
+            damage: weapon.damage,
+            life: 1.2
+        });
+
+        return;
+    }
 
     zombies.forEach(z => {
         const dx = z.x - knight.x;
         const dy = z.y - knight.y;
-
         const distance = Math.hypot(dx, dy);
-        const targetAngle = Math.atan2(dy, dx);
 
-        let difference = targetAngle - angle;
+        let angle = Math.atan2(dy, dx) - knight.direction;
 
-        while (difference > Math.PI) difference -= Math.PI * 2;
-        while (difference < -Math.PI) difference += Math.PI * 2;
+        while (angle > Math.PI) angle -= Math.PI * 2;
+        while (angle < -Math.PI) angle += Math.PI * 2;
 
         if (
-            distance < range + z.radius &&
-            Math.abs(difference) < 1.15
+            distance < weapon.range + z.radius &&
+            Math.abs(angle) < 1.1
         ) {
-            z.health -= 1;
-
-            // Odrzut zombie
-            const force = 240;
-
-            z.vx = Math.cos(angle) * force;
-            z.vy = Math.sin(angle) * force;
-
-            // Efekt trafienia
-            for (let i = 0; i < 10; i++) {
-                particles.push({
-                    x: z.x,
-                    y: z.y,
-                    vx: (Math.random() - 0.5) * 180,
-                    vy: (Math.random() - 0.5) * 180,
-                    life: 0.4,
-                    color: "#a5c66b"
-                });
-            }
+            hitZombie(z, weapon.damage);
         }
     });
 
+    removeDeadZombies();
+}
+
+function hitZombie(z, damage) {
+    z.health -= damage;
+
+    const angle = Math.atan2(
+        z.y - knight.y,
+        z.x - knight.x
+    );
+
+    z.vx = Math.cos(angle) * 260;
+    z.vy = Math.sin(angle) * 260;
+
+    for (let i = 0; i < 8; i++) {
+        particles.push({
+            x: z.x,
+            y: z.y,
+            vx: (Math.random() - 0.5) * 150,
+            vy: (Math.random() - 0.5) * 150,
+            life: 0.4
+        });
+    }
+}
+
+function removeDeadZombies() {
     zombies = zombies.filter(z => {
         if (z.health <= 0) {
             score += 10;
+
+            // Czasami zombie upuszcza nową broń
+            if (Math.random() < 0.18) {
+                const weaponIndex = Math.floor(
+                    Math.random() * weapons.length
+                );
+
+                spawnPickup(z.x, z.y, weaponIndex);
+            }
+
+            updateUI();
             return false;
         }
+
         return true;
     });
-
-    updateUI();
 }
 
 function spawnZombie() {
@@ -237,27 +320,26 @@ function spawnZombie() {
 
     if (side === 0) {
         x = Math.random() * W;
-        y = -30;
+        y = -25;
     } else if (side === 1) {
-        x = W + 30;
+        x = W + 25;
         y = Math.random() * H;
     } else if (side === 2) {
         x = Math.random() * W;
-        y = H + 30;
+        y = H + 25;
     } else {
-        x = -30;
+        x = -25;
         y = Math.random() * H;
     }
 
     zombies.push({
-        x,
-        y,
+        x, y,
         vx: 0,
         vy: 0,
         radius: 18,
         speed: 45 + wave * 5 + Math.random() * 20,
         health: wave >= 5 ? 2 : 1,
-        phase: Math.random() * Math.PI * 2
+        phase: Math.random() * 6
     });
 }
 
@@ -284,8 +366,8 @@ function update(dt) {
         knight.direction = Math.atan2(dy, dx);
     }
 
-    knight.x = Math.max(25, Math.min(W - 25, knight.x));
-    knight.y = Math.max(25, Math.min(H - 25, knight.y));
+    knight.x = Math.max(20, Math.min(W - 20, knight.x));
+    knight.y = Math.max(20, Math.min(H - 20, knight.y));
 
     attackCooldown = Math.max(0, attackCooldown - dt);
     attackAnimation = Math.max(0, attackAnimation - dt);
@@ -293,9 +375,7 @@ function update(dt) {
 
     spawnTimer += dt;
 
-    const spawnDelay = Math.max(0.4, 1.5 - wave * 0.08);
-
-    if (spawnTimer > spawnDelay) {
+    if (spawnTimer > Math.max(0.45, 1.6 - wave * 0.08)) {
         spawnZombie();
         spawnTimer = 0;
     }
@@ -303,7 +383,6 @@ function update(dt) {
     zombies.forEach(z => {
         const dx = knight.x - z.x;
         const dy = knight.y - z.y;
-
         const distance = Math.hypot(dx, dy);
 
         if (distance > 0) {
@@ -311,12 +390,11 @@ function update(dt) {
             z.y += dy / distance * z.speed * dt;
         }
 
-        // Odrzut po uderzeniu
         z.x += z.vx * dt;
         z.y += z.vy * dt;
 
-        z.vx *= Math.pow(0.04, dt);
-        z.vy *= Math.pow(0.04, dt);
+        z.vx *= Math.pow(0.03, dt);
+        z.vy *= Math.pow(0.03, dt);
 
         z.phase += dt * 5;
 
@@ -330,6 +408,24 @@ function update(dt) {
         }
     });
 
+    projectiles.forEach(p => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+
+        zombies.forEach(z => {
+            if (Math.hypot(p.x - z.x, p.y - z.y) < z.radius + 8) {
+                if (p.life > 0) {
+                    hitZombie(z, p.damage);
+                    p.life = 0;
+                }
+            }
+        });
+    });
+
+    projectiles = projectiles.filter(p => p.life > 0);
+    removeDeadZombies();
+
     particles.forEach(p => {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
@@ -338,9 +434,8 @@ function update(dt) {
 
     particles = particles.filter(p => p.life > 0);
 
-    if (score >= nextWaveScore) {
+    if (score >= wave * 100) {
         wave++;
-        nextWaveScore += 100;
         updateUI();
     }
 
@@ -352,34 +447,25 @@ function update(dt) {
 }
 
 function drawBackground() {
-    ctx.fillStyle = "#243b29";
+    ctx.fillStyle = "#263b29";
     ctx.fillRect(0, 0, W, H);
 
-    // Trawa
-    grass.forEach(g => {
+    for (let i = 0; i < 180; i++) {
+        const x = (i * 137) % W;
+        const y = (i * 83) % H;
+
         ctx.fillStyle = "#354f35";
-        ctx.fillRect(g.x, g.y, g.size, g.size);
-    });
-
-    // Kamienie
-    for (let i = 0; i < 12; i++) {
-        const x = (i * 173 + 70) % W;
-        const y = (i * 97 + 40) % H;
-
-        ctx.fillStyle = "#4b5149";
-        ctx.beginPath();
-        ctx.ellipse(x, y, 12, 8, 0.4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(x, y, 3, 3);
     }
 
     // Mgła
     const gradient = ctx.createRadialGradient(
-        W / 2, H / 2, 80,
-        W / 2, H / 2, 450
+        W / 2, H / 2, 100,
+        W / 2, H / 2, 500
     );
 
     gradient.addColorStop(0, "rgba(0,0,0,0)");
-    gradient.addColorStop(1, "rgba(0,0,0,0.55)");
+    gradient.addColorStop(1, "rgba(0,0,0,0.5)");
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, W, H);
@@ -390,7 +476,7 @@ function drawKnight() {
     ctx.translate(knight.x, knight.y);
 
     // Cień
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
     ctx.beginPath();
     ctx.ellipse(0, 13, 20, 9, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -398,9 +484,6 @@ function drawKnight() {
     // Tarcza
     ctx.fillStyle = "#795d38";
     ctx.fillRect(-20, -5, 12, 25);
-
-    ctx.fillStyle = "#d4b16a";
-    ctx.fillRect(-17, -2, 6, 19);
 
     // Zbroja
     ctx.fillStyle = "#aeb8c2";
@@ -420,31 +503,52 @@ function drawKnight() {
     ctx.fillStyle = "#20242a";
     ctx.fillRect(-7, -12, 14, 4);
 
-    // Miecz
+    // Broń
+    const weapon = weapons[knight.weapon];
+
     ctx.save();
     ctx.rotate(knight.direction);
 
-    ctx.fillStyle = "#ddd";
-    ctx.fillRect(13, -3, 42, 6);
+    ctx.fillStyle = weapon.color;
 
-    ctx.fillStyle = "#f7f7f7";
-    ctx.fillRect(13, -2, 38, 2);
-
-    ctx.fillStyle = "#735133";
-    ctx.fillRect(8, -5, 7, 10);
+    if (knight.weapon === 1) {
+        // Topór
+        ctx.fillRect(15, -3, 38, 6);
+        ctx.fillRect(42, -13, 12, 26);
+    } else if (knight.weapon === 2) {
+        // Włócznia
+        ctx.fillRect(10, -2, 90, 4);
+        ctx.beginPath();
+        ctx.moveTo(100, 0);
+        ctx.lineTo(90, -8);
+        ctx.lineTo(90, 8);
+        ctx.fill();
+    } else if (knight.weapon === 3) {
+        // Kusza
+        ctx.fillStyle = "#795d38";
+        ctx.fillRect(12, -9, 22, 18);
+        ctx.fillStyle = "#ddd";
+        ctx.fillRect(17, -2, 30, 4);
+    } else {
+        // Miecz
+        ctx.fillRect(13, -3, 42, 6);
+        ctx.fillStyle = "#735133";
+        ctx.fillRect(8, -5, 7, 10);
+    }
 
     ctx.restore();
 
-    // Animacja ataku
+    // Efekt ataku
     if (attackAnimation > 0) {
         ctx.strokeStyle = "#f5d77b";
-        ctx.lineWidth = 7;
+        ctx.lineWidth = 6;
 
         ctx.beginPath();
         ctx.arc(
-            0, 0, 70,
-            knight.direction - 1.1,
-            knight.direction + 1.1
+            0, 0,
+            weapons[knight.weapon].range,
+            knight.direction - 0.9,
+            knight.direction + 0.9
         );
 
         ctx.stroke();
@@ -457,15 +561,9 @@ function drawZombie(z) {
     ctx.save();
     ctx.translate(z.x, z.y);
 
-    // Cień
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.beginPath();
-    ctx.ellipse(0, 12, 19, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Nogi
     const walk = Math.sin(z.phase) * 4;
 
+    // Nogi
     ctx.fillStyle = "#34472c";
     ctx.fillRect(-11, 7, 8, 15 + walk);
     ctx.fillRect(3, 7, 8, 15 - walk);
@@ -473,9 +571,6 @@ function drawZombie(z) {
     // Ciało
     ctx.fillStyle = "#647d48";
     ctx.fillRect(-15, -9, 30, 23);
-
-    ctx.fillStyle = "#40572f";
-    ctx.fillRect(-12, -6, 24, 17);
 
     // Głowa
     ctx.fillStyle = "#8ca96a";
@@ -487,10 +582,6 @@ function drawZombie(z) {
     ctx.fillStyle = "#1c2419";
     ctx.fillRect(-7, -19, 4, 4);
     ctx.fillRect(4, -19, 4, 4);
-
-    // Usta
-    ctx.fillStyle = "#303b23";
-    ctx.fillRect(-5, -11, 10, 3);
 
     // Ręce
     ctx.strokeStyle = "#8ca96a";
@@ -506,11 +597,44 @@ function drawZombie(z) {
     ctx.restore();
 }
 
+function drawPickups() {
+    pickups.forEach(p => {
+        const weapon = weapons[p.weapon];
+        const bob = Math.sin(performance.now() / 200 + p.phase) * 5;
+
+        ctx.save();
+        ctx.translate(p.x, p.y + bob);
+
+        ctx.fillStyle = "rgba(255,220,100,0.2)";
+        ctx.beginPath();
+        ctx.arc(0, 0, 24, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = weapon.color;
+        ctx.fillRect(-15, -3, 30, 6);
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(weapon.name, 0, 35);
+
+        ctx.restore();
+    });
+}
+
+function drawProjectiles() {
+    projectiles.forEach(p => {
+        ctx.fillStyle = "#f5d77b";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
 function drawParticles() {
     particles.forEach(p => {
         ctx.globalAlpha = Math.max(0, p.life / 0.4);
-        ctx.fillStyle = p.color;
-
+        ctx.fillStyle = "#a5c66b";
         ctx.fillRect(p.x, p.y, 5, 5);
     });
 
@@ -519,8 +643,11 @@ function drawParticles() {
 
 function draw() {
     drawBackground();
+    drawPickups();
 
     zombies.forEach(drawZombie);
+
+    drawProjectiles();
     drawKnight();
     drawParticles();
 
@@ -529,7 +656,6 @@ function draw() {
         ctx.fillRect(0, 0, W, H);
 
         ctx.textAlign = "center";
-
         ctx.fillStyle = "#e9c46a";
         ctx.font = "bold 48px Arial";
         ctx.fillText("KONIEC GRY", W / 2, 230);
@@ -537,9 +663,6 @@ function draw() {
         ctx.fillStyle = "white";
         ctx.font = "26px Arial";
         ctx.fillText("Punkty: " + score, W / 2, 280);
-
-        ctx.font = "20px Arial";
-        ctx.fillText("Kliknij NOWA GRA", W / 2, 330);
     }
 }
 
